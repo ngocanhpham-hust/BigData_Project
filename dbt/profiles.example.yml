@@ -1,0 +1,13 @@
+# Sao chep thanh dbt/profiles.yml (da bi .gitignore) hoac ~/.dbt/profiles.yml
+lakehouse_stock:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none
+      host: localhost
+      port: 8080
+      user: hduser
+      catalog: iceberg
+      schema: test
+      threads: 4

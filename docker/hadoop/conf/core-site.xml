@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://hadoop-namenode</value>
+  </property>
+  <property>
+    <name>ha.zookeeper.quorum</name>
+    <value>namenode01:2181,namenode02:2181,spark:2181</value>
+  </property>
+</configuration>

@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_analytics
+    columns:
+      - name: name
+        tests:
+          - not_null
+  - name: mart_visits_by_name
+    columns:
+      - name: name
+        tests:
+          - not_null
+          - unique

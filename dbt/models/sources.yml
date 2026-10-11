@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: lakehouse
+    description: "Du lieu goc trong Iceberg, do Spark ghi vao"
+    database: iceberg
+    schema: test
+    tables:
+      - name: analytics
+        columns:
+          - name: name
+          - name: user_id
+          - name: total_visits

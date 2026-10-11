@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <property>
+    <name>dfs.nameservices</name>
+    <value>hadoop-namenode</value>
+  </property>
+  <property>
+    <name>dfs.ha.namenodes.hadoop-namenode</name>
+    <value>nn1,nn2</value>
+  </property>
+  <property>
+    <name>dfs.namenode.rpc-address.hadoop-namenode.nn1</name>
+    <value>namenode01:9000</value>
+  </property>
+  <property>
+    <name>dfs.namenode.rpc-address.hadoop-namenode.nn2</name>
+    <value>namenode02:9000</value>
+  </property>
+  <property>
+    <name>dfs.namenode.http-address.hadoop-namenode.nn1</name>
+    <value>namenode01:9870</value>
+  </property>
+  <property>
+    <name>dfs.namenode.http-address.hadoop-namenode.nn2</name>
+    <value>namenode02:9870</value>
+  </property>
+  <property>
+    <name>dfs.replication</name>
+    <value>3</value>
+  </property>
+</configuration>

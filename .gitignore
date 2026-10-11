@@ -1,0 +1,88 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.python-version
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+dbt/profiles.yml
+logs/
+
+# Airflow
+airflow.cfg
+airflow.db
+airflow-webserver.pid
+docker/airflow/logs/
+docker/airflow/plugins/
+*.pid
+
+# Java / Spark / Hadoop
+*.class
+spark-warehouse/
+metastore_db/
+derby.log
+hs_err_pid*.log
+*.hprof
+
+# Du lieu (khong commit du lieu tho/lon)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+*.parquet
+*.orc
+*.avro
+*.csv
+*.tsv
+*.jsonl
+*.gz
+*.zip
+
+# Bi mat & bien moi truong
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials*
+
+# Docker / runtime
+.docker/
+docker/volumes/
+docker/**/data/
+docker/**/logs/
+docker/**/namenode/
+docker/**/datanode/
+
+# Bao cao build ra
+report/*.pdf
+report/*.docx
+!report/README.md
+*.tmp
+*.bak
+*.log
