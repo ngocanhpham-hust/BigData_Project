@@ -1,0 +1,334 @@
+
+===== PAGE 1 =====
+SSH Máy master: ssh qtdl@10.1.117.91 Máy worker 2: ssh qtdl@10.1.117.235 Máy worker 1: ssh qtdl@10.1.117.88 Thoát: exit CÀI ĐẶT KUBERNETES Để cài đặt K8s, quy trình luôn luôn là: Thiết lập Nền móng (Môi trường HĐH) -> Cài phần mềm lõi -> Khởi tạo Cụm. Môi trường HĐH cần 3 thứ: - Tắt Swap (Bộ nhớ ảo) - Vì K8s bắt buộc phải chạy trên RAM thật để đảm bảo tốc độ cao nhất. - Bật tính năng định tuyến mạng (IPv4 forwarding) cho Linux. - Cài containerd (K8s dùng containerd để chạy app chứ không dùng Docker). Để an toàn và chắc chắn không bị Firewall chặn, chúng ta sẽ làm thử trên máy Master (.91) trước. Thực hiện trên cả 3 máy: Tắt SWAP (bộ nhớ ảo) sudo swapoff -a sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab (K8s sẽ crash ngay lập tức nếu phát hiện máy vẫn đang bật SWAP) Cấu hình mạng Kernel Linux cho Network cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf overlay br_netfilter EOF sudo modprobe overlay sudo modprobe br_netfilter cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf net.bridge.bridge-nf-call-iptables
+= 1 net.bridge.bridge-nf-call-ip6tables = 1 net.ipv4.ip_forward = 1 EOF sudo sysctl --system Cài đặt và cấu hình Containerd (Container Runtime thay thế cho Docker Engine) sudo apt-get update sudo apt-get install -y containerd apt-transport-https ca-certificates curl gpg
+
+===== PAGE 2 =====
+sudo mkdir -p /etc/containerd containerd config default | sudo tee /etc/containerd/config.toml >/dev/null sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml sudo systemctl restart containerd sudo systemctl enable containerd Cài đặt lõi Kubernetes (v1.30) sudo mkdir -p -m 755 /etc/apt/keyrings curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list sudo apt-get update sudo apt-get install -y kubelet kubeadm kubectl sudo apt-mark hold kubelet kubeadm kubectl Cài đặt xong. Kiểm tra trên từng máy free -h | grep Swap lsmod | grep -E 'overlay|br_netfilter' sysctl net.ipv4.ip_forward systemctl is-active containerd kubeadm version -o short kubelet --version kubectl version --client -o short systemctl is-enabled kubelet ● Lệnh 1: Kiểm tra bộ nhớ Swap ảo. Yêu cầu bộ nhớ Swap đang dùng phải là 0B
+(hoàn toàn trống). ● Lệnh 2: Kiểm tra Module mạng. Yêu cầu phải in ra hai dòng chứa chữ overlay và br_netfilter. ● Lệnh 3: Kiểm tra cho phép chuyển tiếp IP. Yêu cầu kết quả in ra phải là net.ipv4.ip_forward = 1. ● Lệnh 4: Kiểm tra phần mềm chạy Container. Yêu cầu in ra chữ active. ● Lệnh 5, 6, 7: Kiểm tra phiên bản 3 công cụ lõi của K8s. Yêu cầu phải in ra phiên bản v1.30.x. ● Lệnh 8: Kiểm tra dịch vụ Kubelet đã được cài đặt để tự chạy cùng hệ điều hành chưa. Yêu cầu in ra chữ enabled. (Lưu ý: Lúc này Kubelet chưa hoạt động chính thức vì chưa có Cluster, điều này là bình thường).
+
+===== PAGE 3 =====
+Output mong muốn: qtdl@k8s-worker1:~$ free -h | grep Swap lsmod | grep -E 'overlay|br_netfilter' sysctl net.ipv4.ip_forward systemctl is-active containerd kubeadm version -o short kubelet --version kubectl version --client -o short systemctl is-enabled kubelet Swap: 0B 0B 0B br_netfilter 32768
+0 bridge 421888
+1 br_netfilter overlay 221184
+0 net.ipv4.ip_forward = 1 active v1.30.14 Kubernetes v1.30.14 enabled KHỞI TẠO CLUSTER TRÊN MÁY MASTER (.91) sudo kubeadm init --apiserver-advertise-address=10.1.117.91 --pod-network-cidr=192.168.0.0/16 Output : Your Kubernetes control-plane has initialized successfully! THIẾT LẬP CẤU HÌNH VÀ CÀI ĐẶT CNI CALICO TRÊN MASTER (.91) Bước 1: Cấp quyền quản trị cho tài khoản Chạy 3 lệnh dưới đây để tài khoản qtdl có thể sử dụng lệnh kubectl điều khiển Cluster. mkdir -p $HOME/.kube sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config sudo chown $(id -u):$(id -g) $HOME/.kube/config Bước 2: Cài đặt CNI Calico K8s khởi tạo xong sẽ chưa có đường mạng kết nối. Lệnh này sẽ cài đặt Calico v3.28 vào Cluster để kích hoạt mạng và khởi động CoreDNS. kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml Bước 3: Kiểm tra trạng thái máy Master kubectl get nodes
+
+===== PAGE 4 =====
+Output NAME STATUS ROLES AGE VERSION k8s-master Ready control-plane 7m57s v1.30.14 NỐI 2 MÁY WORKER VÀO CLUSTER Bước 1: Thao tác trên máy Worker 1 (.88) sudo kubeadm join 10.1.117.91:6443 --token 1hegiq.m7praj4pgouwtyvi --discovery-token-ca-cert-hash sha256:9909511359ac75f5a696c78aac604afd6c09028d04aae513491653af31596297 Bước 2: Thao tác trên máy Worker 2 (.235) sudo kubeadm join 10.1.117.91:6443 --token 1hegiq.m7praj4pgouwtyvi --discovery-token-ca-cert-hash sha256:9909511359ac75f5a696c78aac604afd6c09028d04aae513491653af31596297 Bước 3: Kiểm tra nghiệm thu trên máy Master (.91) kubectl get nodes Output : NAME STATUS ROLES AGE VERSION k8s-master Ready control-plane 17m v1.30.14 k8s-worker1 Ready <none> 2m56s v1.30.14 k8s-worker2 Ready <none> 3m46s v1.30.14 -> Cụm Kubernetes 3 Node xong
+
+===== PAGE 5 =====
+CHUẨN BỊ MÔI TRƯỜNG LƯU TRỮ VÀ MÃ NGUỒN CHO LAKEHOUSE 1. Tạo Namespace lakehouse. 2. Helm: Công cụ giúp cài đặt các công cụ Big Data chỉ bằng 1 câu lệnh. 3. StorageClass (Cấp đĩa tự động): Vì MinIO, Kafka, Postgres đều cần lưu dữ liệu ra ổ đĩa thật. Chúng ta sẽ cài local-path-provisioner để K8s tự động cấp phát ổ đĩa trên 3 máy vật lý, tận dụng dung lượng ổ cứng còn trống trên 3 máy vật lý của bạn để tạo đĩa (PVC) cho MinIO, Postgres, Kafka. Bước 1: Tạo Namespace lakehouse kubectl create namespace lakehouse Bước 2: Cài đặt công cụ Helm curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash Bước 3: Cài đặt StorageClass tự động (Rancher Local Path) kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.28/deploy/local-path-st orage.yaml Bước 4: Đặt local-path làm StorageClass mặc định kubectl patch storageclass local-path -p '{"metadata": {"annotations":{" storageclass.kubernetes.io/is-default-class":"true "}}}'
+
+===== PAGE 6 =====
+Bước 5: Kiểm tra nghiệm thu hạ tầng Kiểm tra xem Helm và StorageClass đã hoạt động chưa. helm version kubectl get storageclass Output qtdl@k8s-master:~$ helm version kubectl get storageclass version.BuildInfo{Version:"v3.21.3", GitCommit:"1ad6e68924fdf6fb0c7dcef8e9e1dfc0f36eaed6", GitTreeState:"clean", GoVersion:"go1.26.5"} NAME PROVISIONER RECLAIMPOLICY VOLUMEBINDINGMODE ALLOWVOLUMEEXPANSION AGE local-path (default) rancher.io/local-path Delete WaitForFirstConsumer false Cài đặt MinIO vào K8s Cài MinIO với user là admin , mật khẩu là password123 và xin 10 GB đĩa từ local-path. cat <<EOF | kubectl apply -f - apiVersion: v1 kind: PersistentVolumeClaim metadata:
+name: minio-pvc
+namespace: lakehouse spec:
+accessModes: - ReadWriteOnce
+storageClassName: local-path
+resources: requests: storage: 10Gi --- apiVersion: apps/v1 kind: Deployment metadata:
+name: minio
+namespace: lakehouse
+labels: app: minio spec:
+replicas: 1
+
+===== PAGE 7 =====
+
+selector: matchLabels: app: minio
+template: metadata: labels: app: minio spec: containers: - name: minio image: quay.io/minio/minio:latest command: - minio - server - /data - --console-address - ":9090" env: - name: MINIO_ROOT_USER value: "admin" - name: MINIO_ROOT_PASSWORD value: "password123" ports: - containerPort: 9000 name: api - containerPort: 9090 name: console volumeMounts: - name: data mountPath: /data volumes: - name: data persistentVolumeClaim: claimName: minio-pvc --- apiVersion: v1 kind: Service metadata:
+name: minio-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 9000 targetPort: 9000 nodePort: 30000 name: api
+- port: 9090
+
+===== PAGE 8 =====
+targetPort: 9090 nodePort: 30090 name: console
+selector: app: minio EOF Đợi khoảng 30s, kiểm tra kết quả cài đặt kubectl get pods,pvc -n lakehouse Output NAME READY STATUS RESTARTS AGE pod/minio-564cdf9ccd-g6q5w 1/1 Running 0 29s NAME STATUS VOLUME CAPACITY ACCESS MODES STORAGECLASS VOLUMEATTRIBUTESCLASS AGE persistentvolumeclaim/minio-pvc Bound pvc-bada2912-6a36-4b18-a15a-f6a9d2de628b 10Gi RWO local-path <unset> 30s Tạo 3 Vùng dữ liệu (Buckets) trên Minio cho Data Lakehouse Tạo 3 Vùng dữ liệu và liệt kê kết quả: Chờ MinIO sẵn sàng, tự động tạo 3 Buckets cho 3 vùng dữ liệu (raw-zone, cleansed-zone, curated-zone), sau đó in danh sách thư mục ra màn hình. kubectl run mc-init --rm -i --tty --restart='Never' --image=quay.io/minio/mc --namespace lakehouse --command -- /bin/sh -c "until mc alias set myminio http://minio-service:9000 admin password123; do sleep 2; done; mc mb --ignore-existing myminio/raw-zone; mc mb --ignore-existing myminio/cleansed-zone; mc mb --ignore-existing myminio/curated-zone; mc ls myminio" Output mc: Configuration written to `/root/.mc/config.json`. Please update your access credentials. mc: Successfully created `/root/.mc/share`. mc: Initialized share uploads `/root/.mc/share/uploads.json` file. mc: Initialized share downloads `/root/.mc/share/downloads.json` file. Added `myminio` successfully. Bucket created successfully `myminio/raw-zone`. Bucket created successfully `myminio/cleansed-zone`. Bucket created successfully `myminio/curated-zone`. [2026-07-22 04:15:37 UTC] 0B cleansed-zone/ [2026-07-22 04:15:37 UTC] 0B curated-zone/ [2026-07-22 04:15:37 UTC] 0B raw-zone/
+
+===== PAGE 9 =====
+KHỞI TẠO POSTGRESQL Bước 1: Khởi tạo PostgreSQL (PVC + App + Cổng 30432) Tạo đĩa cứng 10 GB postgres-pvc, chạy PostgreSQL 16 Alpine, tạo Database tên là metastore, user postgres , password postgres123 . cat <<EOF | kubectl apply -f - apiVersion: v1 kind: PersistentVolumeClaim metadata:
+name: postgres-pvc
+namespace: lakehouse spec:
+accessModes: - ReadWriteOnce
+storageClassName: local-path
+resources: requests: storage: 10Gi --- apiVersion: apps/v1 kind: Deployment metadata:
+name: postgres
+namespace: lakehouse
+labels: app: postgres spec:
+replicas: 1
+selector: matchLabels: app: postgres
+template: metadata: labels: app: postgres spec: containers: - name: postgres image: postgres:16-alpine env: - name: POSTGRES_USER value: "postgres" - name: POSTGRES_PASSWORD value: "postgres123" - name: POSTGRES_DB
+
+===== PAGE 10 =====
+value: "metastore" ports: - containerPort: 5432 name: postgres volumeMounts: - name: data mountPath: /var/lib/postgresql/data volumes: - name: data persistentVolumeClaim: claimName: postgres-pvc --- apiVersion: v1 kind: Service metadata:
+name: postgres-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 5432 targetPort: 5432 nodePort: 30432 name: postgres
+selector: app: postgres EOF Bước 2: Kiểm tra nghiệm thu Xem cả MinIO và PostgreSQL đã hoạt động cùng nhau chưa. kubectl get pods,pvc -n lakehouse -o wide Output NAME READY STATUS RESTARTS AGE IP NODE NOMINATED NODE READINESS GATES pod/minio-564cdf9ccd-g6q5w 1/1 Running 0 3h35m 192.168.194.70 k8s-worker1 <none> <none> pod/postgres-b79f4f876-zjmhm 0/1 ContainerCreating 0 7s <none> k8s-worker2 <none> <none> NAME STATUS VOLUME CAPACITY ACCESS MODES STORAGECLASS VOLUMEATTRIBUTESCLASS AGE VOLUMEMODE persistentvolumeclaim/minio-pvc Bound pvc-bada2912-6a36-4b18-a15a-f6a9d2de628b 10Gi RWO local-path <unset> 3h35m Filesystem persistentvolumeclaim/postgres-pvc Bound pvc-754023e2-28e1-4f1a-b6fa-c0a3047fb667 10Gi RWO local-path <unset> 8s Filesystem
+
+===== PAGE 11 =====
+–→ - Pod minio được K8s xếp sang chạy ở k8s-worker1 (10.1.117.88). - Pod Postgres được K8s tự động phân bổ sang chạy ở k8s-worker2 (10.1.117.235). Pod PostgreSQL đã tải xong image và chuyển sang Running. - Cả 2 đĩa PVC 10 GB đều đã được cấp phát thành công (Bound). APACHE KAFKA Cài đặt Apache Kafka phiên bản mới (KRaft Mode) chính chủ từ Apache. Tạo đĩa cứng 10 GB kafka-pvc, khởi chạy Apache Kafka 3.7.0 chính chủ từ Apache, và mở cổng NodePort 30092. Bước 1: Khởi tạo Apache Kafka (PVC + App KRaft Mode + Cổng 30092) cat <<EOF | kubectl apply -f - apiVersion: v1 kind: PersistentVolumeClaim metadata:
+name: kafka-pvc
+namespace: lakehouse spec:
+accessModes: - ReadWriteOnce
+storageClassName: local-path
+resources: requests: storage: 10Gi --- apiVersion: apps/v1 kind: Deployment metadata:
+name: kafka
+namespace: lakehouse
+labels: app: kafka spec:
+replicas: 1
+selector: matchLabels: app: kafka
+template: metadata: labels: app: kafka spec: containers: - name: kafka image: apache/kafka:3.7.0
+
+===== PAGE 12 =====
+env: - name: KAFKA_NODE_ID value: "1" - name: KAFKA_PROCESS_ROLES value: "broker,controller" - name: KAFKA_LISTENERS value: "PLAINTEXT://:9092,CONTROLLER://:9093" - name: KAFKA_ADVERTISED_LISTENERS value: "PLAINTEXT://kafka-service:9092" - name: KAFKA_CONTROLLER_LOCAL_LISTENER_SETTINGS value: "CONTROLLER://:9093" - name: KAFKA_CONTROLLER_QUORUM_VOTERS value: "1@localhost:9093" - name: KAFKA_INTER_BROKER_LISTENER_NAME value: "PLAINTEXT" - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR value: "1" - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS value: "0" - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR value: "1" - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR value: "1" - name: KAFKA_LOG_DIRS value: "/var/lib/kafka/data" ports: - containerPort: 9092 name: plaintext volumeMounts: - name: data mountPath: /var/lib/kafka/data volumes: - name: data persistentVolumeClaim: claimName: kafka-pvc --- apiVersion: v1 kind: Service metadata:
+name: kafka-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 9092 targetPort: 9092 nodePort: 30092 name: plaintext
+
+===== PAGE 13 =====
+
+selector: app: kafka EOF Bước 2: Kiểm tra nghiệm thu MinIO + Postgres + Kafka kubectl get pods,pvc -n lakehouse -o wide Output NAME READY STATUS RESTARTS AGE IP NODE NOMINATED NODE READINESS GATES pod/kafka-6d4c497c7f-4xkmp 1/1 Running 0 42s 192.168.194.73 k8s-worker1 <none> <none> pod/minio-564cdf9ccd-g6q5w 1/1 Running 0 3h44m 192.168.194.70 k8s-worker1 <none> <none> pod/postgres-b79f4f876-zjmhm 1/1 Running 0 9m25s 192.168.126.9 k8s-worker2 <none> <none> NAME STATUS VOLUME CAPACITY ACCESS MODES STORAGECLASS VOLUMEATTRIBUTESCLASS AGE VOLUMEMODE persistentvolumeclaim/kafka-pvc Bound pvc-fda4eafd-a59c-4ff0-90ed-8a1a36720e5c 10Gi RWO local-path <unset> 42s Filesystem persistentvolumeclaim/minio-pvc Bound pvc-bada2912-6a36-4b18-a15a-f6a9d2de628b 10Gi RWO local-path <unset> 3h44m Filesystem persistentvolumeclaim/postgres-pvc Bound pvc-754023e2-28e1-4f1a-b6fa-c0a3047fb667 10Gi RWO local-path <unset> 9m26s Filesystem —-> cả 3 đều running và bound ● MinIO: Đang chạy ở k8s-worker1 (.88). ● PostgreSQL: Đang chạy ở k8s-worker2 (.235). ● Apache Kafka: Đang chạy ở k8s-worker1 (.88). APACHE SPARK Tải Image Apache Spark 3.5.1 từ Apache, dựng 1 Spark Master (Cổng giao diện 30080) và 2 Spark Workers để phân chia tải tính toán. Đoạn 1: Khởi tạo Cụm Apache Spark (Master + 2 Workers + Cổng Web 30080) cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: spark-master
+namespace: lakehouse
+
+===== PAGE 14 =====
+
+labels: app: spark-master spec:
+replicas: 1
+selector: matchLabels: app: spark-master
+template: metadata: labels: app: spark-master spec: containers: - name: spark-master image: apache/spark:3.5.1 command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"] ports: - containerPort: 7077 name: cluster - containerPort: 8080 name: ui resources: requests: cpu: "500m" memory: "1Gi" --- apiVersion: v1 kind: Service metadata:
+name: spark-master-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 7077 targetPort: 7077 name: cluster
+- port: 8080 targetPort: 8080 nodePort: 30080 name: ui
+selector: app: spark-master --- apiVersion: apps/v1 kind: Deployment metadata:
+name: spark-worker
+
+===== PAGE 15 =====
+
+namespace: lakehouse
+labels: app: spark-worker spec:
+replicas: 2
+selector: matchLabels: app: spark-worker
+template: metadata: labels: app: spark-worker spec: containers: - name: spark-worker image: apache/spark:3.5.1 command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master-service:7077"] resources: requests: cpu: "500m" memory: "1Gi" EOF Bước 2: Bổ sung cấu hình cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: kafka
+namespace: lakehouse
+labels: app: kafka spec:
+replicas: 1
+selector: matchLabels: app: kafka
+template: metadata: labels: app: kafka spec: containers: - name: kafka image: apache/kafka:3.7.0 env: - name: KAFKA_NODE_ID value: "1"
+
+===== PAGE 16 =====
+- name: KAFKA_PROCESS_ROLES value: "broker,controller" - name: KAFKA_LISTENERS value: "PLAINTEXT://:9092,CONTROLLER://:9093" - name: KAFKA_ADVERTISED_LISTENERS value: "PLAINTEXT://kafka-service:9092" - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP value: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT" - name: KAFKA_CONTROLLER_LISTENER_NAMES value: "CONTROLLER" - name: KAFKA_CONTROLLER_LOCAL_LISTENER_SETTINGS value: "CONTROLLER://:9093" - name: KAFKA_CONTROLLER_QUORUM_VOTERS value: "1@localhost:9093" - name: KAFKA_INTER_BROKER_LISTENER_NAME value: "PLAINTEXT" - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR value: "1" - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS value: "0" - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR value: "1" - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR value: "1" - name: KAFKA_LOG_DIRS value: "/var/lib/kafka/data" ports: - containerPort: 9092 name: plaintext volumeMounts: - name: data mountPath: /var/lib/kafka/data volumes: - name: data persistentVolumeClaim: claimName: kafka-pvc EOF Bước 3: Kiểm tra kubectl get pods -n lakehouse -o wide Output Running hết là ok —-> ● MinIO (k8s-worker1): S3 Object Storage chứa Raw/Cleansed/Curated zones. ● PostgreSQL (k8s-worker2): Cơ sở dữ liệu Metastore trung tâm. ● Apache Kafka (k8s-worker1): Truyền tải dữ liệu thời gian thực. ● Apache Spark (Master ở k8s-worker1, 2 Workers rải đều ở k8s-worker1 và k8s-worker2): Bộ máy tính toán Big Data.
+
+===== PAGE 17 =====
+APACHE AIRFLOW Bước 1: Triển khai Apache Airflow kết nối trực tiếp vào PostgreSQL Tạo Airflow kết nối vào Postgres metastore, tự động khởi tạo tài khoản admin/admin, bật cả bộ lập lịch (Scheduler) và giao diện Web. cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: airflow
+namespace: lakehouse
+labels: app: airflow spec:
+replicas: 1
+selector: matchLabels: app: airflow
+template: metadata: labels: app: airflow spec: containers: - name: airflow image: apache/airflow:2.9.1 command: - /bin/bash - -c - | airflow db init airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin airflow scheduler & exec airflow webserver env: - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN value: "postgresql+psycopg2://postgres:postgres123@postgres-service:5432/metastore" - name: AIRFLOW__CORE__EXECUTOR value: "LocalExecutor" - name: AIRFLOW__CORE__LOAD_EXAMPLES value: "False" ports: - containerPort: 8080
+
+===== PAGE 18 =====
+name: webserver resources: requests: cpu: "500m" memory: "1Gi" --- apiVersion: v1 kind: Service metadata:
+name: airflow-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 8080 targetPort: 8080 nodePort: 30808 name: webserver
+selector: app: airflow EOF Bước 2: Kiểm tra kubectl get pods -n lakehouse -o wide APACHE NIFI Triển khai Apache NiFi (Cổng Web 30909) Tạo một Deployment NiFi, cấu hình cổng HTTP 8080 nội bộ và mở cổng NodePort 30909. cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: nifi
+namespace: lakehouse
+labels: app: nifi spec:
+replicas: 1
+selector: matchLabels: app: nifi
+template: metadata: labels: app: nifi
+
+===== PAGE 19 =====
+spec: containers: - name: nifi image: apache/nifi:1.26.0 env: - name: NIFI_WEB_HTTP_PORT value: "8080" ports: - containerPort: 8080 name: http resources: requests: cpu: "500m" memory: "1Gi" --- apiVersion: v1 kind: Service metadata:
+name: nifi-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 8080 targetPort: 8080 nodePort: 30909 name: http
+selector: app: nifi EOF ● MinIO (Storage S3) ● PostgreSQL (Metadata DB) ● Apache Kafka (Streaming) ● Apache Spark Master + 2 Workers (Calculations) ● Apache Airflow (Orchestration) ● Apache NiFi (Ingestion) OPENMETADATA Bước 1: Triển khai OpenMetadata kết nối PostgreSQL Tạo Deployment OpenMetadata Server, liên kết dữ liệu với Postgres metastore và mở cổng NodePort 30858. cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+
+===== PAGE 20 =====
+
+name: openmetadata
+namespace: lakehouse
+labels: app: openmetadata spec:
+replicas: 1
+selector: matchLabels: app: openmetadata
+template: metadata: labels: app: openmetadata spec: containers: - name: openmetadata image: openmetadata/server:1.3.1 env: - name: DB_DRIVER_CLASS value: "org.postgresql.Driver" - name: DB_SCHEME value: "postgresql" - name: DB_USE_SSL value: "false" - name: DB_USER value: "postgres" - name: DB_PASSWORD value: "postgres123" - name: DB_HOST value: "postgres-service" - name: DB_PORT value: "5432" - name: DB_NAME value: "metastore" ports: - containerPort: 8585 name: http resources: requests: cpu: "500m" memory: "1Gi" --- apiVersion: v1 kind: Service metadata:
+name: openmetadata-service
+namespace: lakehouse spec:
+
+===== PAGE 21 =====
+
+type: NodePort
+ports:
+- port: 8585 targetPort: 8585 nodePort: 30858 name: http
+selector: app: openmetadata EOF OpenMetadata khi khởi chạy đòi hỏi phải có một Database riêng tên là openmetadata_db nằm bên trong PostgreSQL, trong khi hiện tại PostgreSQL mới chỉ có database mặc định là metastore. Bước 2: Tự động tạo Database openmetadata_db bên trong PostgreSQL kubectl exec -i deployment/postgres -n lakehouse -- psql -U postgres -c "CREATE DATABASE openmetadata_db;" Bước 3: Cập nhật cấu hình OpenMetadata trỏ đúng Database openmetadata_db cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: openmetadata
+namespace: lakehouse
+labels: app: openmetadata spec:
+replicas: 1
+selector: matchLabels: app: openmetadata
+template: metadata: labels: app: openmetadata spec: containers: - name: openmetadata image: openmetadata/server:1.3.1 env: - name: DB_DRIVER_CLASS value: "org.postgresql.Driver" - name: DB_SCHEME value: "postgresql" - name: DB_USE_SSL value: "false"
+
+===== PAGE 22 =====
+- name: DB_USER value: "postgres" - name: DB_PASSWORD value: "postgres123" - name: DB_HOST value: "postgres-service" - name: DB_PORT value: "5432" - name: DB_NAME value: "openmetadata_db" - name: DB_PARAMS value: "?sslmode=disable" ports: - containerPort: 8585 name: http resources: requests: cpu: "500m" memory: "1Gi" EOF Bước 4: Kiểm tra kubectl get pods -n lakehouse -o wide —-> running hết là ok Khi khởi động, OpenMetadata sẽ kết nối vào PostgreSQL thành công (nên nó hiện Running). Nhưng ngay sau đó, dịch vụ HealthCheck ngầm của OpenMetadata bắt đầu tìm kiếm bộ đệm Elasticsearch / OpenSearch để đánh chỉ mục (search index). Khi không tìm thấy OpenSearch sau 1-2 phút, nó tự coi là hệ thống bị lỗi và tự tắt tiến trình (Crash). Nếu vẫn lỗi, tạo User riêng openmetadata và cấp quyền hoàn toàn trong PostgreSQL kubectl exec -i deployment/postgres -n lakehouse -- psql -U postgres -c "CREATE USER openmetadata WITH PASSWORD 'openmetadata123';" 2>/dev/null || true kubectl exec -i deployment/postgres -n lakehouse -- psql -U postgres -c "CREATE DATABASE openmetadata_db OWNER openmetadata;" 2>/dev/null || true kubectl exec -i deployment/postgres -n lakehouse -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE openmetadata_db TO openmetadata;" 2>/dev/null || true Cập nhật OpenMetadata sử dụng User riêng vừa tạo cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: openmetadata
+namespace: lakehouse
+
+===== PAGE 23 =====
+
+labels: app: openmetadata spec:
+replicas: 1
+selector: matchLabels: app: openmetadata
+template: metadata: labels: app: openmetadata spec: containers: - name: openmetadata image: openmetadata/server:1.3.1 env: - name: DB_DRIVER_CLASS value: "org.postgresql.Driver" - name: DB_SCHEME value: "postgresql" - name: DB_USE_SSL value: "false" - name: DB_USER value: "openmetadata" - name: DB_PASSWORD value: "openmetadata123" - name: DB_HOST value: "postgres-service" - name: DB_PORT value: "5432" - name: DB_NAME value: "openmetadata_db" - name: DB_PARAMS value: "?sslmode=disable" ports: - containerPort: 8585 name: http resources: requests: cpu: "500m" memory: "1Gi" EOF Khởi tạo OpenSearch siêu nhẹ (Bộ đệm tìm kiếm cho OpenMetadata) Đoạn lệnh này tạo một Deployment OpenSearch chính chủ (bản 512MB RAM) để phục vụ việc đánh chỉ mục dữ liệu.
+
+===== PAGE 24 =====
+cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: opensearch
+namespace: lakehouse
+labels: app: opensearch spec:
+replicas: 1
+selector: matchLabels: app: opensearch
+template: metadata: labels: app: opensearch spec: containers: - name: opensearch image: opensearchproject/opensearch:2.12.0 env: - name: discovery.type value: "single-node" - name: DISABLE_SECURITY_PLUGIN value: "true" - name: OPENSEARCH_JAVA_OPTS value: "-Xms512m -Xmx512m" ports: - containerPort: 9200 name: http resources: requests: cpu: "250m" memory: "512Mi" --- apiVersion: v1 kind: Service metadata:
+name: opensearch-service
+namespace: lakehouse spec:
+type: ClusterIP
+ports:
+- port: 9200 targetPort: 9200 name: http
+
+===== PAGE 25 =====
+
+selector: app: opensearch EOF Cập nhật OpenMetadata kết nối trực tiếp tới OpenSearch Khai báo cho OpenMetadata biết địa chỉ của opensearch-service:9200 để nó hoạt động ổn định vĩnh viễn. cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: openmetadata
+namespace: lakehouse
+labels: app: openmetadata spec:
+replicas: 1
+selector: matchLabels: app: openmetadata
+template: metadata: labels: app: openmetadata spec: containers: - name: openmetadata image: openmetadata/server:1.3.1 env: - name: DB_DRIVER_CLASS value: "org.postgresql.Driver" - name: DB_SCHEME value: "postgresql" - name: DB_USE_SSL value: "false" - name: DB_USER value: "openmetadata" - name: DB_PASSWORD value: "openmetadata123" - name: DB_HOST value: "postgres-service" - name: DB_PORT value: "5432" - name: DB_NAME value: "openmetadata_db"
+
+===== PAGE 26 =====
+- name: DB_PARAMS value: "?sslmode=disable" - name: SEARCH_TYPE value: "opensearch" - name: SEARCH_HOST value: "opensearch-service" - name: SEARCH_PORT value: "9200" - name: SEARCH_SCHEME value: "http" ports: - containerPort: 8585 name: http resources: requests: cpu: "500m" memory: "1Gi" EOF Apache Iceberg REST Catalog Kết nối Iceberg Catalog trực tiếp vào vùng đĩa MinIO cleansed-zone. cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: iceberg-rest
+namespace: lakehouse
+labels: app: iceberg-rest spec:
+replicas: 1
+selector: matchLabels: app: iceberg-rest
+template: metadata: labels: app: iceberg-rest spec: containers: - name: iceberg-rest image: tabulario/iceberg-rest:latest env: - name: CATALOG_WAREHOUSE value: "s3://cleansed-zone/"
+
+===== PAGE 27 =====
+- name: CATALOG_IO__IMPL value: "org.apache.iceberg.aws.s3.S3FileIO" - name: CATALOG_S3_ENDPOINT value: "http://minio-service:9000" - name: CATALOG_S3_PATH--STYLE--ACCESS value: "true" - name: AWS_ACCESS_KEY_ID value: "admin" - name: AWS_SECRET_ACCESS_KEY value: "password123" - name: AWS_REGION value: "us-east-1" ports: - containerPort: 8181 name: http --- apiVersion: v1 kind: Service metadata:
+name: iceberg-service
+namespace: lakehouse spec:
+type: ClusterIP
+ports:
+- port: 8181 targetPort: 8181 name: http
+selector: app: iceberg-rest EOF Trino SQL Query Engine (Cổng Web 30800) cat <<EOF | kubectl apply -f - apiVersion: apps/v1 kind: Deployment metadata:
+name: trino
+namespace: lakehouse
+labels: app: trino spec:
+replicas: 1
+selector: matchLabels: app: trino
+
+===== PAGE 28 =====
+
+template: metadata: labels: app: trino spec: containers: - name: trino image: trinodb/trino:latest ports: - containerPort: 8080 name: http resources: requests: cpu: "500m" memory: "1Gi" --- apiVersion: v1 kind: Service metadata:
+name: trino-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 8080 targetPort: 8080 nodePort: 30800 name: http
+selector: app: trino EOF Cổng vào Giao diện MinIO: http://10.1.117.91:30090 (User: admin | Pass: password123) Giao diện Apache Airflow: http://10.1.117.91:30808 (User: admin | Pass: admin) Giao diện Apache NiFi: http://10.1.117.91:30909 Giao diện Apache Spark Master: http://10.1.117.91:30080
+
+===== PAGE 29 =====
+Cổng kết nối CSDL PostgreSQL (Dùng cho phần mềm DBeaver/Navicat): Host: 10.1.117.91 | Port: 30432 (User: postgres | Pass: postgres123) NAME TYPE CLUSTER-IP EXTERNAL-IP PORT(S) AGE airflow-service NodePort 10.107.207.104 <none> 8080:30808/TCP 46h iceberg-service ClusterIP 10.110.17.105 <none> 8181/TCP 46h kafka-service NodePort 10.104.198.164 <none> 9092:30092/TCP 47h minio-service NodePort 10.98.172.24 <none> 9000:30000/TCP,9090:30090/TCP 2d3h nifi-service NodePort 10.109.119.61 <none> 8080:30909/TCP 46h openmetadata-service NodePort 10.104.227.243 <none> 8585:30858/TCP 46h opensearch-service ClusterIP 10.107.216.45 <none> 9200/TCP 45h postgres-service NodePort 10.96.195.62 <none> 5432:30432/TCP 28h spark-master-service NodePort 10.105.109.111 <none> 7077:31316/TCP,8080:30080/TCP 47h trino-service NodePort 10.103.133.202 <none> 8080:30800/TCP 45h
+
+===== PAGE 30 =====
+TÀI LIỆU ORACLE TO ICEBERG 1. KIẾN TRÚC LUỒNG DỮ LIỆU
+- Nguồn: db Oracle CMIS.BC_DVI_BCAO
+- Ingestion Layer: Apache NiFi (Chạy trên K8s, thu thập dữ liệu định kỳ, chuyển đổi sang Parquet).
+- Raw Storage Layer: MinIO S3 (raw-zone).
+- Processing Layer: Apache Spark (Xử lý batch, đọc Parquet, ghi định dạng bảng Iceberg).
+- Catalog/Metastore Layer: PostgreSQL (JDBC Catalog quản lý cấu trúc bảng ACID).
+- Cleansed Storage Layer: MinIO S3 (cleansed-zone). 2. GIAI ĐOẠN 1: INGESTION (NIFI TO MINIO) Tải về Oracle JDBC drive trước 2.1. Cấp phát Driver kết nối Oracle cho NiFi NiFi chạy trong môi trường Container độc lập, cần mount driver ojdbc8.jar trực tiếp vào Pod. Thực thi lệnh trên Master Node: Tạo thư mục chứa driver trong Pod kubectl exec -i deployment/nifi -n lakehouse -- mkdir -p /opt/nifi/drivers Copy file từ host vào Pod kubectl cp ojdbc8.jar lakehouse/$(kubectl get pod -n lakehouse -l app=nifi -o jsonpath='{.items[0].metadata.name}'):/opt/nifi/drivers/ojdbc8.jar Cấp quyền đọc kubectl exec -i deployment/nifi -n lakehouse -- chmod 644 /opt/nifi/drivers/ojdbc8.jar 2.2. Cấu hình DBCPConnectionPool (Giao diện Web NiFi)
+- Database Connection URL: jdbc:oracle:thin:@<IP>:<PORT>/<DB_NAME>
+- Database Driver Class Name: oracle.jdbc.driver.OracleDriver
+- Database Driver Location(s): /opt/nifi/drivers/ojdbc8.jar
+- Troubleshooting (Xử lý lỗi): Lỗi Driver class not found xuất hiện nếu xác thực (Verify) trước khi lưu. Bắt buộc bấm APPLY để lưu cấu hình vào RAM trước, sau đó mới bấm biểu tượng tia sét để ENABLE.
+
+===== PAGE 31 =====
+2.3. Xây dựng Pipeline Processors (NIFI) Luồng xử lý gồm 4 node nối tiếp: 1.
+ExecuteSQL: Truy vấn select * from CMIS.BC_DVI_BCAO (Output: Avro). 2.
+ConvertAvroToParquet: Ép kiểu sang định dạng Parquet. 3.
+UpdateAttribute: Thêm thuộc tính filename = bc_dvi_bcao.parquet. 4.
+PutS3Object: Đẩy dữ liệu vào MinIO. Troubleshooting PutS3Object (Lỗi điều hướng AWS):
+- Lỗi: AmazonS3Exception: The bucket is in this region: eu-west-3.
+- Khắc phục: Bắt buộc thiết lập 3 tham số để ép NiFi trỏ về cụm K8s nội bộ: - Endpoint Override URL: http://minio-service:9000 - Use Path Style Access: true - Region: us-east-1 (Bypass AWS SDK check). 2.4. Xác thực dữ liệu Raw-Zone kubectl run mc-check-raw --rm -i --tty --restart='Never' --image=quay.io/minio/mc --namespace lakehouse --command -- /bin/sh -c "mc alias set myminio http://minio-service:9000 admin password123 >/dev/null && mc ls myminio/raw-zone" 3. GIAI ĐOẠN 2: PROCESSING (SPARK TO ICEBERG) 3.1. Quyết định Kiến trúc Catalog
+- Vấn đề ban đầu: Sử dụng Iceberg REST Catalog gây lỗi UnknownHostException do thư viện S3 SDK không phân giải được service name nội bộ khi chốt giao dịch metadata.
+- Giải pháp thay thế: Chuyển sang JDBC Catalog. Sử dụng PostgreSQL làm Metastore quản lý cấu trúc bảng, Spark ghi dữ liệu trực tiếp vào MinIO. 3.2. Mã nguồn PySpark (ETL Script) Tạo file process_raw_to_cleansed.py trên Master Node. Đoạn mã này thực hiện kết nối JDBC Catalog, đọc Parquet từ raw-zone và ghi định dạng Iceberg sang cleansed-zone. cat <<'EOF' > $HOME/process_raw_to_cleansed.py from pyspark.sql import SparkSession spark = SparkSession.builder \ .appName("Raw-To-Cleansed-Iceberg") \ .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
+
+===== PAGE 32 =====
+.config("spark.sql.catalog.demo", "org.apache.iceberg.spark.SparkCatalog") \ .config("spark.sql.catalog.demo.type", "jdbc") \ .config("spark.sql.catalog.demo.uri", "jdbc:postgresql://postgres-service.lakehouse.svc.cluster.local:5432/metastore") \ .config("spark.sql.catalog.demo.jdbc.user", "postgres") \ .config("spark.sql.catalog.demo.jdbc.password", "postgres123") \ .config("spark.sql.catalog.demo.warehouse", "s3a://cleansed-zone/") \ .config("spark.sql.catalog.demo.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \ .config("spark.sql.catalog.demo.s3.endpoint", "http://minio-service.lakehouse.svc.cluster.local:9000") \ .config("spark.sql.catalog.demo.s3.path-style-access", "true") \ .config("spark.sql.catalog.demo.s3.access-key-id", "admin") \ .config("spark.sql.catalog.demo.s3.secret-access-key", "password123") \ .config("spark.sql.catalog.demo.client.region", "us-east-1") \ .config("spark.hadoop.fs.s3a.endpoint", "http://minio-service.lakehouse.svc.cluster.local:9000") \ .config("spark.hadoop.fs.s3a.access.key", "admin") \ .config("spark.hadoop.fs.s3a.secret.key", "password123") \ .config("spark.hadoop.fs.s3a.path.style.access", "true") \ .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \ .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \ .getOrCreate() # doc Parquet tu Raw-Zone df_raw = spark.read.parquet("s3a://raw-zone/bc_dvi_bcao.parquet") # Khoi tao DB tren JDBC Catalog spark.sql("CREATE DATABASE IF NOT EXISTS demo") # Ghi du lieu thanh bang Iceberg vao Cleansed-Zone df_raw.write.format("iceberg").mode("overwrite").saveAsTable("demo.bc_dvi_bcao") spark.stop() EOF 3.3. Thực thi Spark Submit & Khắc phục lỗi (Troubleshooting) Thực thi Submit Script: # Copy file vao Spark Master Pod kubectl cp $HOME/process_raw_to_cleansed.py lakehouse/$(kubectl get pod -n lakehouse -l app=spark-master -o jsonpath='{.items[0].metadata.name}'):/opt/spark/process_raw_to_cleansed.py # Chay Spark Submit kubectl exec -i deployment/spark-master -n lakehouse -- /opt/spark/bin/spark-submit \
+--conf spark.jars.ivy=/tmp/.ivy2 \
+
+===== PAGE 33 =====
+
+--packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.apache.iceberg:iceberg-aws-b undle:1.5.2,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.1 2.262,org.postgresql:postgresql:42.6.0 \
+/opt/spark/process_raw_to_cleansed.py Các lỗi đã xử lý trong quá trình thiết lập Spark: 1.
+Lỗi Permission Denied (.ivy2 cache): User spark không có quyền ghi tại /home/spark/. - Fix: Thêm tham số --conf spark.jars.ivy=/tmp/.ivy2 để ghi cache vào thư mục temporary. 2.
+Lỗi NoClassDefFoundError (AWS S3Exception): Thiếu thư viện giao tiếp AWS SDK v2. - Fix: Bổ sung package org.apache.iceberg:iceberg-aws-bundle:1.5.2. 3.
+Lỗi SdkClientException (Region missing): AWS SDK bắt buộc phải có Region dù MinIO không yêu cầu. - Fix: Định nghĩa tham số client.region và s3.region là us-east-1 trong Spark config. 4. XÁC THỰC CẤU TRÚC BẢNG ICEBERG Kiểm tra trực tiếp cấu trúc lưu trữ do Spark sinh ra trên hệ thống MinIO để đảm bảo tính toàn vẹn của bảng ACID. kubectl run mc-check-clean --rm -i --tty --restart='Never' --image=quay.io/minio/mc --namespace lakehouse --command -- /bin/sh -c "mc alias set myminio http://minio-service:9000 admin password123 >/dev/null && mc ls myminio/cleansed-zone/demo.db/bc_dvi_bcao/ --recursive" Kiến trúc giải phẫu kết quả in ra: Hệ thống lưu trữ Iceberg chuẩn mực sẽ phân tách làm 2 phân vùng vật lý: 1.
+/data/*.parquet: Chứa các bản ghi dữ liệu thực tế (Data files). 2.
+/metadata/*.json & *.avro: Chứa Manifest files và Snapshot tracking phục vụ giao dịch ACID và Time Travel (Quay lui dữ liệu). Lịch sử giao dịch được trỏ thông qua PostgreSQL JDBC Catalog. 5. GIAI ĐOẠN 3: QUERY ENGINE (TRINO TO ICEBERG/MINIO) 5.1. Mục tiêu Kiến trúc Tích hợp Trino (Presto) làm Engine truy vấn SQL.Trino đọc Metastore từ PostgreSQL JDBC Catalog, sau đó truy vấn trực tiếp dữ liệu Parquet của Bảng Iceberg lưu trên MinIO cleansed-zone.
+
+===== PAGE 34 =====
+5.2. Cấu hình Trino Iceberg Catalog (Trino v483+) Tạo ConfigMap gắn toàn bộ thư mục /etc/trino/catalog để nạp cấu hình iceberg.properties chuẩn cho phiên bản Trino mới. Thực thi lệnh trên Master Node: cat <<EOF | kubectl apply -f - apiVersion: v1 kind: ConfigMap metadata:
+name: trino-catalog-config
+namespace: lakehouse data:
+iceberg.properties: | connector.name=iceberg iceberg.catalog.type=jdbc iceberg.jdbc-catalog.catalog-name=demo iceberg.jdbc-catalog.driver-class=org.postgresql.Driver iceberg.jdbc-catalog.connection-url=jdbc:postgresql://postgres-service.lakehouse.svc.cluster. local:5432/metastore iceberg.jdbc-catalog.connection-user=postgres iceberg.jdbc-catalog.connection-password=postgres123 iceberg.jdbc-catalog.default-warehouse-dir=s3a://cleansed-zone/ fs.native-s3.enabled=true s3.endpoint=http://minio-service.lakehouse.svc.cluster.local:9000 s3.path-style-access=true s3.aws-access-key=admin s3.aws-secret-key=password123 s3.region=us-east-1
+tpch.properties: | connector.name=tpch --- apiVersion: apps/v1 kind: Deployment metadata:
+name: trino
+namespace: lakehouse
+labels: app: trino spec:
+replicas: 1
+selector: matchLabels: app: trino
+
+===== PAGE 35 =====
+
+template: metadata: labels: app: trino spec: containers: - name: trino image: trinodb/trino:latest ports: - containerPort: 8080 name: http resources: requests: cpu: "500m" memory: "1Gi" volumeMounts: - name: catalog-volume mountPath: /etc/trino/catalog volumes: - name: catalog-volume configMap: name: trino-catalog-config --- apiVersion: v1 kind: Service metadata:
+name: trino-service
+namespace: lakehouse spec:
+type: NodePort
+ports:
+- port: 8080 targetPort: 8080 nodePort: 30800 name: http
+selector: app: trino EOF 5.3. Nhật ký Lỗi & Cách khắc phục (Trino Troubleshooting) Lỗi 1: Catalog 'iceberg' not found
+- Nguyên nhân: Sử dụng subPath gắn file đơn lẻ làm Trino bỏ qua không đọc file cấu hình.
+- Khắc phục: Gắn nguyên thư mục /etc/trino/catalog từ ConfigMap. Lỗi 2: Configuration property 'hive.s3.*' was not used & catalog-name: must not be empty
+
+===== PAGE 36 =====
+
+- Nguyên nhân: Trino v440+ (đặc biệt v483) đã loại bỏ tiền tố hive.s3.* cũ và bắt buộc khai báo catalog-name.
+- Khắc phục: Chuyển sang cú pháp chuẩn mới s3.*, bật fs.native-s3.enabled=true và khai báo iceberg.jdbc-catalog.catalog-name=demo. Lỗi 3: Schema 'demo' does not exist (Lỗi lệch Metadata giữa Spark và Trino)
+- Nguyên nhân: PySpark khi tạo bảng JDBC Catalog đã để trống giá trị cột table_namespace (rỗng) trong bảng iceberg_tables của PostgreSQL. Trino phát hiện cột namespace bị rỗng nên ẩn hoàn toàn Schema demo.
+- Khắc phục: Thực thi lệnh SQL cập nhật trực tiếp trong PostgreSQL để chuẩn hóa namespace: # Cap nhat namespace bi rong thanh 'demo' kubectl exec -i deployment/postgres -n lakehouse -- psql -U postgres -d metastore -c "UPDATE iceberg_tables SET table_namespace = 'demo' WHERE table_name = 'bc_dvi_bcao';" # Kiem tra lai So đo trong Postgres kubectl exec -i deployment/postgres -n lakehouse -- psql -U postgres -d metastore -c "SELECT catalog_name, table_namespace, table_name FROM iceberg_tables;" 5.4. Nghiệm thu Thực thi Truy vấn SQL (Verification) Chạy các lệnh truy vấn qua Trino CLI để kiểm tra khả năng đọc Bảng Iceberg: 1. Kiểm tra danh sách Schema: kubectl exec -i deployment/trino -n lakehouse -- trino --execute "SHOW SCHEMAS FROM iceberg;" (Kết quả thành công: Xuất hiện schema "demo" bên cạnh "information_schema" và "system"). 2. Truy vấn dữ liệu Bảng Iceberg: kubectl exec -i deployment/trino -n lakehouse -- trino --execute "SELECT * FROM iceberg.demo.bc_dvi_bcao LIMIT 5;" Kết quả thực tế trả về từ Trino: "PB0807","Đội Quản lý điện Chợ Gạo","PB07","4","Số 52 Ô4 Khu 3, đường 30/4, xã Chợ Gạo, tỉnh Đồng Tháp"... "PB0808","Đội Quản lý điện Châu Thành","PB07","4","Ấp Tân Phú, xã Châu Thành, tỉnh Đồng Tháp"... "PB0809","Đội Quản lý điện Cái Bè","PB07","4","Ấp 4, xã Bình Phú, tỉnh Đồng Tháp"...
+
+===== PAGE 37 =====
+"PB0810","Đội Quản lý điện Tân Phú Đông","PB07","4","Ấp Tân Phú, xã Tân Phú Đông, tỉnh Đồng Tháp"... "PB0901","Đội Quản lý điện Bến Tre","PB10","4","Số 568B2 đường Nguyễn Thị Định, khu phố 3, phường Phú Khương, tỉnh Vĩnh Long"... 6. TỔNG KẾT 1.
+Ingestion: Oracle DB -> Apache NiFi (Chuyển đổi Avro sang Parquet) -> MinIO (s3a://raw-zone/bc_dvi_bcao.parquet). 2.
+Processing: Apache Spark -> Đọc Parquet từ raw-zone -> Ghi cấu trúc Iceberg chuẩn ACID vào PostgreSQL Metastore (demo.bc_dvi_bcao) -> Ghi dữ liệu Parquet + Metadata Snapshots vào MinIO (s3a://cleansed-zone/). 3.
+Serving/Analytics: Trino SQL Engine -> Đọc Sổ đỏ từ Postgres -> Đọc dữ liệu từ MinIO cleansed-zone -> Trả kết quả truy vấn SQL
