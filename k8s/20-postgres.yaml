@@ -1,0 +1,115 @@
+# PostgreSQL — một instance phục vụ 3 mục đích, tiết kiệm RAM:
+#   1. metastore          : Iceberg JDBC Catalog (nguồn sự thật của Lakehouse)
+#   2. airflow_meta       : metadata backend của Airflow
+#   3. openmetadata_db    : metadata catalog của OpenMetadata
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: lakehouse
+data:
+  # Chỉ chạy lần đầu khi thư mục dữ liệu còn rỗng.
+  # Database `metastore` do POSTGRES_DB tự tạo.
+  01-create-databases.sql: |
+    CREATE DATABASE airflow_meta;
+    CREATE DATABASE openmetadata_db;
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: lakehouse
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: lakehouse
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          # Tinh chỉnh bộ nhớ cho môi trường 16GB
+          args:
+            - "-c"
+            - "shared_buffers=128MB"
+            - "-c"
+            - "work_mem=4MB"
+            - "-c"
+            - "max_connections=50"
+          env:
+            - name: POSTGRES_DB
+              value: metastore
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "metastore"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: init
+          configMap:
+            name: postgres-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: lakehouse
+spec:
+  type: NodePort
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      nodePort: 30432

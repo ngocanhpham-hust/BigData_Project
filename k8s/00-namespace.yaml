@@ -1,0 +1,7 @@
+# Namespace cô lập toàn bộ stack Lakehouse khỏi workload khác trên cụm dùng chung.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lakehouse
+  labels:
+    app.kubernetes.io/part-of: lakehouse

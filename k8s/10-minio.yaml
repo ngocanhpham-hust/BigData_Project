@@ -1,0 +1,98 @@
+# MinIO — object storage tương thích S3, thay thế HDFS của bản Docker.
+# Lưu 3 vùng Medallion: raw-zone / cleansed-zone / curated-zone.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: lakehouse
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path     # k3s đã tích hợp sẵn local-path-provisioner
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: lakehouse
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                 # tránh 2 Pod tranh nhau PVC ReadWriteOnce
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          # Ghim phiên bản thay vì :latest để kết quả tái lập được
+          image: quay.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
+          args: ["server", "/data", "--console-address", ":9090"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_PASSWORD
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-service
+  namespace: lakehouse
+spec:
+  type: NodePort
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      nodePort: 30000
+    - name: console
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090

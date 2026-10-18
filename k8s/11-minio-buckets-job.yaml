@@ -1,0 +1,48 @@
+# Job tạo 3 bucket Medallion. Idempotent nhờ --ignore-existing.
+# Lưu ý: Job không tự chạy lại nếu đã Complete. Muốn tạo lại bucket:
+#   kubectl delete job minio-init-buckets -n lakehouse
+#   kubectl apply -f k8s/11-minio-buckets-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init-buckets
+  namespace: lakehouse
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: quay.io/minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              # Chờ MinIO sẵn sàng trước khi thao tác
+              until mc alias set myminio http://minio-service:9000 "$MINIO_USER" "$MINIO_PASS"; do
+                echo "waiting for minio-service..."
+                sleep 2
+              done
+              mc mb --ignore-existing myminio/raw-zone
+              mc mb --ignore-existing myminio/cleansed-zone
+              mc mb --ignore-existing myminio/curated-zone
+              mc ls myminio
+          env:
+            - name: MINIO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_USER
+            - name: MINIO_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: MINIO_ROOT_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
