@@ -86,3 +86,6 @@ report/*.docx
 *.tmp
 *.bak
 *.log
+
+# File mau nho cho team test luong (duoc commit)
+!data/sample/*.csv
