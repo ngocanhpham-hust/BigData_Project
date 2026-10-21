@@ -3,7 +3,7 @@
 Hệ thống **Data LakeHouse** phục vụ phân tích dữ liệu chứng khoán, triển khai trên
 **Kubernetes** (cụm k3d 3 node giả lập trên một máy 16GB RAM).
 
-> Trạng thái: 🚧 đang dựng hạ tầng. Đã có namespace, MinIO, PostgreSQL trên K8s.
+> Trạng thái: đang dựng hạ tầng. Đã có namespace, MinIO, PostgreSQL trên K8s.
 
 ## 1. Kiến trúc tổng thể
 
@@ -128,7 +128,7 @@ kubectl -n lakehouse scale deployment nifi kafka --replicas=0
 kubectl -n lakehouse scale deployment trino openmetadata opensearch --replicas=1
 ```
 
-⚠️ Ở đợt 2, bật **OpenSearch trước**, đợi `Running` rồi mới bật OpenMetadata —
+Lưu ý: ở đợt 2, bật **OpenSearch trước**, đợi `Running` rồi mới bật OpenMetadata —
 làm ngược lại OpenMetadata sẽ crash vì thiếu search engine.
 
 ## 8. Lộ trình thực hiện
