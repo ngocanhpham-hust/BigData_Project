@@ -10,6 +10,20 @@
 
 Dữ liệu mẫu nhỏ (có commit) nằm ở `data/sample/` — dùng để test luồng NiFi/Kafka/Spark.
 
+## Tải dữ liệu đầy đủ (không cần cào lại)
+
+Dữ liệu thật đã được đính kèm ở GitHub Release **`data-v1`**:
+<https://github.com/ngocanhpham-hust/BigData_Project/releases/tag/data-v1>
+
+```bash
+mkdir -p data/raw
+gh release download data-v1 --repo ngocanhpham-hust/BigData_Project --dir data/raw
+# hoặc tải tay 2 file trên trang release rồi bỏ vào data/raw/
+
+# dữ liệu 1 phút mô phỏng (30 triệu dòng) sinh lại từ bảng giá ngày, ~1 phút:
+python etl/generate_synthetic.py
+```
+
 ## Schema
 
 **`stock_prices_daily`** (giá tính bằng **nghìn đồng**, đúng như nguồn)
