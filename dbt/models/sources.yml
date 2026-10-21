@@ -2,12 +2,8 @@ version: 2
 
 sources:
   - name: lakehouse
-    description: "Du lieu goc trong Iceberg, do Spark ghi vao"
+    description: "Bang Iceberg cleansed-zone do Spark (batch_ingest.py) ghi vao"
     database: iceberg
-    schema: test
+    schema: stock
     tables:
-      - name: analytics
-        columns:
-          - name: name
-          - name: user_id
-          - name: total_visits
+      - name: stock_prices_daily

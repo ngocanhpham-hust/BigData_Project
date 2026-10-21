@@ -3,7 +3,8 @@
 Hệ thống **Data LakeHouse** phục vụ phân tích dữ liệu chứng khoán, triển khai trên
 **Kubernetes** (cụm k3d 3 node giả lập trên một máy 16GB RAM).
 
-> Trạng thái: đang dựng hạ tầng. Đã có namespace, MinIO, PostgreSQL trên K8s.
+> Trạng thái: đã có hạ tầng K8s (MinIO, PostgreSQL) và pipeline tối thiểu chạy được:
+> Parquet giá ngày → Spark làm sạch → bảng Iceberg → mô hình dbt. Kafka/NiFi/Trino/Airflow/OpenMetadata mới ở mức thiết kế (xem lộ trình).
 
 ## 1. Kiến trúc tổng thể
 
@@ -75,13 +76,12 @@ Cổng map ra host: MinIO console `30090`, MinIO API `30000`, PostgreSQL `30432`
 │   ├── 10-minio.yaml
 │   ├── 11-minio-buckets-job.yaml
 │   └── 20-postgres.yaml
-├── scripts/             # create-cluster.sh, check_env.sh
+├── scripts/             # create-cluster.sh
 ├── spark-jobs/          # job Spark batch & streaming ghi Iceberg
-├── dbt/                 # dbt project: staging → intermediate → marts
+├── dbt/                 # dbt project: staging → marts
 ├── etl/                 # script lấy dữ liệu API chứng khoán
 ├── data/                # dữ liệu local — không commit
 ├── docs/                # planning/, reference/, architecture.md
-├── report/              # báo cáo
 └── Makefile             # lệnh tiện dụng
 ```
 
@@ -136,8 +136,8 @@ làm ngược lại OpenMetadata sẽ crash vì thiếu search engine.
 - [x] **GĐ 0** — Chốt dữ liệu, kiến trúc, cấu trúc dự án
 - [x] **GĐ 1** — Cụm k3d 3 node + namespace + MinIO + PostgreSQL
 - [ ] **GĐ 2** — Kafka + Spark-on-Kubernetes + NiFi
-- [ ] **GĐ 3** — Iceberg JDBC catalog + pipeline raw → cleansed
-- [ ] **GĐ 4** — Trino + dbt
+- [x] **GĐ 3** — Iceberg JDBC catalog + pipeline raw → cleansed (`spark-jobs/batch_ingest.py`, đã chạy thử local)
+- [ ] **GĐ 4** — Trino + dbt (model dbt đã viết, chưa chạy trên Trino)
 - [ ] **GĐ 5** — Airflow + OpenMetadata + OpenSearch
 - [ ] **GĐ 6** — Đo hiệu năng + tự động hóa qua API
 - [ ] **GĐ 7** — Viết báo cáo + đóng gói
@@ -195,5 +195,14 @@ print(df[df.symbol == "VNM"].tail())
 - Giá tính bằng **nghìn đồng**. `adj_*` là giá đã điều chỉnh cổ tức/chia tách, tính MA hay lợi suất nên dùng `adj_close`.
 - Dòng có `volume = 0` là ngày mã không giao dịch (nhiều ở UPCoM), nên lọc `volume > 0` khi phân tích.
 - `sector` là ngành ICB cấp supersector (19 nhóm, ví dụ `Banks`, `Technology`).
+
+### Chạy pipeline Spark → Iceberg (thử nhanh trên máy, không cần K8s)
+
+```bash
+make ingest-local      # cần Java 8/11/17 và pyspark 3.5.1; ghi bảng iceberg.stock.stock_prices_daily
+```
+
+Trên K8s: đưa `stock_prices_daily.parquet` vào bucket `raw-zone`, rồi `spark-submit` job
+với `--packages` Iceberg/hadoop-aws/postgresql (xem `Makefile`). Kết quả bản thử: 4.048.907 dòng thô → 2.649.633 dòng sau lọc `volume > 0`.
 
 Chi tiết schema, nguồn dữ liệu và cách cào lại: [`etl/README.md`](etl/README.md).

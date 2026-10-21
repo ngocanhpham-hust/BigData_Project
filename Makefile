@@ -43,10 +43,18 @@ buckets: ## Tạo lại 3 bucket Medallion
 	kubectl -n $(NS) delete job minio-init-buckets --ignore-not-found
 	kubectl apply -f k8s/11-minio-buckets-job.yaml
 
+# ─── Pipeline dữ liệu ───
+ingest-local: ## Spark batch: data/raw parquet -> Iceberg (catalog Hadoop local, thu nhanh)
+	LOCAL=1 ICEBERG_WAREHOUSE=$(CURDIR)/data/processed/warehouse \
+	RAW_PATH=data/raw/stock_prices_daily.parquet \
+	spark-submit --driver-memory 4g \
+	  --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2 \
+	  spark-jobs/batch_ingest.py
+
 # ─── Tiện ích ───
 env: ## Tạo file .env từ mẫu
 	@test -f .env || cp .env.example .env
 	@echo ".env đã sẵn sàng"
 
 .PHONY: help cluster-up cluster-down cluster-status k8s-apply k8s-delete \
-        k8s-status k8s-logs k8s-shell buckets env
+        k8s-status k8s-logs k8s-shell buckets ingest-local env

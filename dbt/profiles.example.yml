@@ -9,5 +9,5 @@ lakehouse_stock:
       port: 8080
       user: hduser
       catalog: iceberg
-      schema: test
+      schema: stock
       threads: 4

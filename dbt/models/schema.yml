@@ -1,14 +1,13 @@
 version: 2
 
 models:
-  - name: stg_analytics
+  - name: stg_stock_prices
     columns:
-      - name: name
-        tests:
-          - not_null
-  - name: mart_visits_by_name
+      - name: symbol
+        tests: [not_null]
+      - name: trade_date
+        tests: [not_null]
+  - name: mart_symbol_monthly
     columns:
-      - name: name
-        tests:
-          - not_null
-          - unique
+      - name: symbol
+        tests: [not_null]
