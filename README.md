@@ -148,3 +148,52 @@ làm ngược lại OpenMetadata sẽ crash vì thiếu search engine.
 - Không commit mật khẩu thật, dữ liệu thô, key. Xem `.gitignore`.
 - Version ghim cố định để kết quả tái lập được.
 - Dữ liệu PVC nằm ở `~/lakehouse-data`, không mất khi xoá cụm.
+
+## 10. Dữ liệu: cách tải và dùng
+
+Dữ liệu chứng khoán **không nằm trong repo** (quá lớn). Bản đầy đủ đính kèm ở GitHub Release
+[`data-v1`](https://github.com/ngocanhpham-hust/BigData_Project/releases/tag/data-v1).
+
+| File | Nội dung | Quy mô |
+|---|---|---|
+| `stock_prices_daily.parquet` | Giá ngày thật của 1.519 mã HOSE/HNX/UPCoM, 2013-01-02 → 2026-10-20 | ~4,05 triệu dòng, 85 MB |
+| `dim_symbol.csv` | Danh sách mã: `symbol, company_name, exchange, listed_date, icb_code, sector` | 1.519 mã |
+| Nến 1 phút (**mô phỏng**) | Sinh lại bằng script, không có trong release | 30 triệu dòng |
+
+### Tải về
+
+```bash
+mkdir -p data/raw
+gh release download data-v1 --repo ngocanhpham-hust/BigData_Project --dir data/raw
+```
+
+Không có `gh` thì tải tay 2 file trên trang release rồi bỏ vào `data/raw/`. Thư mục này nằm trong `.gitignore`, không bị commit.
+Muốn test nhanh khi chưa tải: dùng file mẫu ~100 dòng trong `data/sample/`.
+
+### Sinh dữ liệu 1 phút mô phỏng (để đo hiệu năng)
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install pandas pyarrow requests numpy
+.venv/bin/python etl/generate_synthetic.py                         # 30 triệu dòng, ~1 phút
+.venv/bin/python etl/generate_synthetic.py --target-rows 5000000   # bản nhỏ hơn
+```
+
+Kết quả nằm ở `data/raw/synthetic/`. **Đây là dữ liệu mô phỏng** (bung từ giá ngày thật, tổng khớp đúng từng ngày), chỉ dùng đo tải, không dùng cho phân tích. Báo cáo phải ghi rõ điều này.
+
+### Dùng dữ liệu
+
+```python
+import pandas as pd
+
+prices = pd.read_parquet("data/raw/stock_prices_daily.parquet")
+symbols = pd.read_csv("data/raw/dim_symbol.csv", dtype={"icb_code": str})
+
+df = prices.merge(symbols[["symbol", "sector"]], on="symbol")
+print(df[df.symbol == "VNM"].tail())
+```
+
+- Giá tính bằng **nghìn đồng**. `adj_*` là giá đã điều chỉnh cổ tức/chia tách, tính MA hay lợi suất nên dùng `adj_close`.
+- Dòng có `volume = 0` là ngày mã không giao dịch (nhiều ở UPCoM), nên lọc `volume > 0` khi phân tích.
+- `sector` là ngành ICB cấp supersector (19 nhóm, ví dụ `Banks`, `Technology`).
+
+Chi tiết schema, nguồn dữ liệu và cách cào lại: [`etl/README.md`](etl/README.md).
