@@ -2,8 +2,13 @@ version: 2
 
 sources:
   - name: lakehouse
-    description: "Bang Iceberg cleansed-zone do Spark (batch_ingest.py) ghi vao"
+    description: "Bang Iceberg cleansed-zone do Spark (batch_ingest.py) ghi vao. Trino catalog: iceberg."
     database: iceberg
     schema: stock
     tables:
       - name: stock_prices_daily
+        columns:
+          - name: symbol
+            tests: [not_null]
+          - name: trade_date
+            tests: [not_null]

@@ -18,3 +18,14 @@ models:
       +materialized: view
     marts:
       +materialized: table
+
+seeds:
+  lakehouse_stock:
+    seed_dim_symbol:
+      +column_types:
+        symbol: varchar
+        company_name: varchar
+        exchange: varchar
+        listed_date: varchar
+        icb_code: varchar
+        sector: varchar

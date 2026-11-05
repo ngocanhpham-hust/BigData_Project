@@ -7,7 +7,50 @@ models:
         tests: [not_null]
       - name: trade_date
         tests: [not_null]
+    tests:
+      - unique:
+          column_name: "symbol || '|' || cast(trade_date as varchar)"
+  - name: stg_dim_symbol
+    columns:
+      - name: symbol
+        tests: [not_null, unique]
+  - name: int_price_indicators
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: trade_date
+        tests: [not_null]
+  - name: fact_stock_price
+    columns:
+      - name: symbol
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_symbol')
+              field: symbol
+      - name: date
+        tests: [not_null]
+  - name: dim_symbol
+    columns:
+      - name: symbol
+        tests: [not_null, unique]
+      - name: exchange
+        tests: [not_null]
   - name: mart_symbol_monthly
     columns:
       - name: symbol
         tests: [not_null]
+  - name: mart_top_volatility
+    columns:
+      - name: symbol
+        tests: [not_null, unique]
+  - name: mart_liquidity_sector_monthly
+    columns:
+      - name: sector
+        tests: [not_null]
+      - name: month
+        tests: [not_null]
+  - name: mart_ma_latest
+    columns:
+      - name: symbol
+        tests: [not_null, unique]
