@@ -1,0 +1,171 @@
+# Trino v483: 1 coordinator + 1 worker. Chỉ bật ở "đợt 2" (xem README mục RAM).
+#   kubectl -n lakehouse port-forward svc/trino-coordinator 8080:8080   # UI + dbt
+# Mỗi pod chép cấu hình từ ConfigMap vào /etc/trino rồi ghi node.id = tên pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino-coordinator
+  namespace: lakehouse
+  labels:
+    app: trino
+    component: coordinator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: trino
+      component: coordinator
+  template:
+    metadata:
+      labels:
+        app: trino
+        component: coordinator
+    spec:
+      containers:
+        - name: trino
+          image: trinodb/trino:483
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cp -L /config/*.properties /config/jvm.config /etc/trino/
+              mkdir -p /etc/trino/catalog
+              cp -L /config/catalog/*.properties /etc/trino/catalog/
+              cp /config/coordinator.properties /etc/trino/config.properties
+              echo "node.id=$(hostname)" >> /etc/trino/node.properties
+              exec /usr/lib/trino/bin/run-trino
+          envFrom:
+            - secretRef:
+                name: minio-secret
+            - secretRef:
+                name: postgres-secret
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/info
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              memory: 1536Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: data
+              mountPath: /data/trino
+      volumes:
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: trino-config
+                  items:
+                    - {key: coordinator-config.properties, path: coordinator.properties}
+                    - {key: node.properties, path: node.properties}
+                    - {key: jvm.config, path: jvm.config}
+                    - {key: log.properties, path: log.properties}
+                    - {key: iceberg.properties, path: catalog/iceberg.properties}
+                    - {key: postgresql.properties, path: catalog/postgresql.properties}
+        - name: data
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino-worker
+  namespace: lakehouse
+  labels:
+    app: trino
+    component: worker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: trino
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: trino
+        component: worker
+    spec:
+      containers:
+        - name: trino
+          image: trinodb/trino:483
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cp -L /config/*.properties /config/jvm.config /etc/trino/
+              mkdir -p /etc/trino/catalog
+              cp -L /config/catalog/*.properties /etc/trino/catalog/
+              cp /config/worker.properties /etc/trino/config.properties
+              echo "node.id=$(hostname)" >> /etc/trino/node.properties
+              exec /usr/lib/trino/bin/run-trino
+          envFrom:
+            - secretRef:
+                name: minio-secret
+            - secretRef:
+                name: postgres-secret
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /v1/info
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              memory: 1536Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: data
+              mountPath: /data/trino
+      volumes:
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: trino-config
+                  items:
+                    - {key: worker-config.properties, path: worker.properties}
+                    - {key: node.properties, path: node.properties}
+                    - {key: jvm.config, path: jvm.config}
+                    - {key: log.properties, path: log.properties}
+                    - {key: iceberg.properties, path: catalog/iceberg.properties}
+                    - {key: postgresql.properties, path: catalog/postgresql.properties}
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino-coordinator
+  namespace: lakehouse
+spec:
+  type: ClusterIP
+  selector:
+    app: trino
+    component: coordinator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
