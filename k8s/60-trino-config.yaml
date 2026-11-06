@@ -1,0 +1,62 @@
+# Cấu hình Trino (1 coordinator + 1 worker). Mật khẩu KHÔNG ghi ở đây:
+# file .properties dùng ${ENV:TEN_BIEN}, biến lấy từ Secret (xem 02-secrets.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+  namespace: lakehouse
+data:
+  coordinator-config.properties: |
+    coordinator=true
+    # false: coordinator chỉ điều phối, truy vấn chạy trên worker -> thấy rõ 2 node
+    node-scheduler.include-coordinator=false
+    http-server.http.port=8080
+    discovery.uri=http://trino-coordinator:8080
+    query.max-memory=512MB
+    memory.heap-headroom-per-node=256MB
+  worker-config.properties: |
+    coordinator=false
+    http-server.http.port=8080
+    discovery.uri=http://trino-coordinator:8080
+    query.max-memory=512MB
+    memory.heap-headroom-per-node=256MB
+  node.properties: |
+    node.environment=lakehouse
+    node.data-dir=/data/trino
+  jvm.config: |
+    -server
+    -Xmx1G
+    -XX:InitialRAMPercentage=30
+    -XX:+UseG1GC
+    -XX:G1HeapRegionSize=32M
+    -XX:+ExplicitGCInvokesConcurrent
+    -XX:+ExitOnOutOfMemoryError
+    -XX:-OmitStackTraceInFastThrow
+    -Djdk.attach.allowAttachSelf=true
+  log.properties: |
+    io.trino=INFO
+  # Catalog `iceberg`: đọc bảng Iceberg do Spark ghi (JDBC catalog trên Postgres, dữ liệu trên MinIO).
+  iceberg.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=jdbc
+    # Phải trùng tên catalog bên Spark (spark.sql.catalog.iceberg) -> "iceberg"
+    iceberg.jdbc-catalog.catalog-name=iceberg
+    iceberg.jdbc-catalog.driver-class=org.postgresql.Driver
+    iceberg.jdbc-catalog.connection-url=jdbc:postgresql://postgres-service:5432/metastore
+    iceberg.jdbc-catalog.connection-user=${ENV:POSTGRES_USER}
+    iceberg.jdbc-catalog.connection-password=${ENV:POSTGRES_PASSWORD}
+    # Iceberg 1.5.2 (Spark) tạo bảng catalog theo schema V0
+    iceberg.jdbc-catalog.schema-version=V0
+    iceberg.jdbc-catalog.default-warehouse-dir=s3://cleansed-zone/warehouse
+    fs.native-s3.enabled=true
+    s3.endpoint=http://minio-service:9000
+    s3.region=us-east-1
+    s3.path-style-access=true
+    s3.aws-access-key=${ENV:MINIO_ROOT_USER}
+    s3.aws-secret-key=${ENV:MINIO_ROOT_PASSWORD}
+  # Catalog `postgresql`: để viết truy vấn kết hợp Iceberg JOIN PostgreSQL.
+  postgresql.properties: |
+    connector.name=postgresql
+    connection-url=jdbc:postgresql://postgres-service:5432/metastore
+    connection-user=${ENV:POSTGRES_USER}
+    connection-password=${ENV:POSTGRES_PASSWORD}
