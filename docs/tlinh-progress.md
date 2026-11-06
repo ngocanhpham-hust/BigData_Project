@@ -5,9 +5,13 @@ Nhánh làm việc: `feat/gd2-3-spark-iceberg`, base `origin/main` tại commit 
 
 ## Mốc nộp theo phân công của TLINH
 
-README phân công ghi tuần tương đối, không có ngày bắt đầu từng tuần. Bản nộp
-này được giới hạn theo **GĐ 2–3, phần Spark + Iceberg**; ngày commit là ngày làm
-việc thực tế, không dùng để suy ra nhóm đã hoàn thành các mốc sau.
+**Mốc chốt: hết tuần 2**, do Linh xác nhận. Bản nộp gồm phần Spark + Iceberg
+của tuần 1–2, tương ứng GĐ 2–3 trong lộ trình kỹ thuật. Giai đoạn kỹ thuật và
+tuần trong timeline là hai cách đánh số khác nhau.
+
+README chưa ghi ngày bắt đầu từng tuần nên tài liệu không tự quy đổi mốc này
+thành ngày dương lịch. Tích hợp toàn nhóm tuần 3 và benchmark/báo cáo tuần 4
+vẫn là các việc tiếp theo, chưa được nghiệm thu trong bản nộp hết tuần 2.
 
 | Mốc trong timeline | Phần việc của Linh trong nhánh này | Trạng thái nghiệm thu |
 | --- | --- | --- |

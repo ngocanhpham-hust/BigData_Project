@@ -4,6 +4,10 @@
 Phạm vi: Spark 3.5.1, Iceberg 1.5.2, MinIO S3A, PostgreSQL JDBC catalog,
 batch và streaming trên Kubernetes. Không cần cài Java/Spark trên host khi dùng image.
 
+**Bản nộp hết tuần 2:** nền Spark trên K8s, schema Iceberg, batch/streaming và
+kiểm thử độc lập bằng sample. Tích hợp Kafka/NiFi/DAG của cả nhóm và benchmark
+toàn bộ dữ liệu thuộc các mốc sau, hiện chưa đánh dấu hoàn thành.
+
 ## 1. Các file chính
 
 | File | Nội dung |
