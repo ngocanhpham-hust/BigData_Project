@@ -9,6 +9,7 @@ batch và streaming trên Kubernetes. Không cần cài Java/Spark trên host kh
 | File | Nội dung |
 | --- | --- |
 | `spark/Dockerfile` | Spark/Python/Java 17 và JAR đã tải khi build |
+| `spark/Dockerfile.dockerignore` | Giới hạn context riêng cho image Spark, không ảnh hưởng build của thành viên khác |
 | `spark/fetch_jars.py` | Tải dependency đúng version, kiểm tra checksum Maven |
 | `k8s/40-spark-rbac.yaml` | ServiceAccount `spark`, Role/RoleBinding trong namespace |
 | `k8s/41-spark-config.yaml` | Một executor 1 core/1 GB, Secret injection, driver networking |
@@ -177,6 +178,11 @@ Kafka/JDBC/S3A trên Kubernetes.
 ## 8. Kiểm thử Kafka trong cluster riêng
 
 Chỉ dùng fixture trong cluster riêng chưa có Kafka của NAP:
+
+Fixture là broker tạm **không có PVC**. Nếu pod hoặc cluster restart, topic/log có
+thể mất. Với lần smoke test mới, dùng catalog, warehouse và checkpoint test riêng;
+không dùng checkpoint cũ để che lỗi mất Kafka log. Kafka của nhóm cần được NAP
+triển khai với lưu trữ và cấu hình retention phù hợp.
 
 ```bash
 kubectl apply -f tests/spark/kafka-fixture.yaml

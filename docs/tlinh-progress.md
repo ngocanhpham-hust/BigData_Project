@@ -3,6 +3,24 @@
 Ngày cập nhật: 06/11/2026. Người phụ trách: **Linh (`tlinh`)**.
 Nhánh làm việc: `feat/gd2-3-spark-iceberg`, base `origin/main` tại commit `b1d3014`.
 
+## Mốc nộp theo phân công của TLINH
+
+README phân công ghi tuần tương đối, không có ngày bắt đầu từng tuần. Bản nộp
+này được giới hạn theo **GĐ 2–3, phần Spark + Iceberg**; ngày commit là ngày làm
+việc thực tế, không dùng để suy ra nhóm đã hoàn thành các mốc sau.
+
+| Mốc trong timeline | Phần việc của Linh trong nhánh này | Trạng thái nghiệm thu |
+| --- | --- | --- |
+| Tuần 1 | Image, ServiceAccount/RBAC, Spark driver/executor trên K8s | Đã kiểm thử trong cluster riêng |
+| Tuần 2 | Schema Iceberg, batch từ raw-zone, streaming từ Kafka, checkpoint MinIO | Đã kiểm thử sample; Kafka dùng fixture riêng |
+| Tuần 3 | Bàn giao bảng cho TD/Anh Đạt, nối Kafka/NiFi và DAG chung | Chờ tích hợp, không đánh dấu hoàn tất |
+| Tuần 4 | Hỗ trợ benchmark và báo cáo | Chưa thực hiện trong bản nộp này |
+
+Kafka fixture và Dockerfile MinIO nằm trong `tests/spark/` chỉ phục vụ kiểm thử
+Spark độc lập. Chúng không thay thế phần triển khai Kafka/NiFi của NAP hoặc hạ
+tầng chung. Nhánh này không thay đổi Trino/dbt, Airflow/OpenMetadata, README
+hay Makefile chung và không bao gồm kết quả benchmark 30 triệu dòng.
+
 ## 1. Tiến độ chung theo repository mới nhất
 
 Đã đối chiếu README phân công bạn cung cấp với code trên `main` sau PR #3.
@@ -91,17 +109,34 @@ Lỗi RBAC cleanup PVC/collection phát hiện trong lần chạy đầu đã đ
 Streaming và job verify tiếp theo không còn lỗi Forbidden.
 
 Kết thúc kiểm thử, cluster được dừng để trả RAM cho máy; không xóa cluster/PVC.
-Mở lại trên máy Linh bằng các lệnh sau, từ thư mục repository checkout này:
+Trên máy đã có cluster test, mở lại bằng kubeconfig riêng của môi trường đó:
 
 ```bash
-export PATH=/Applications/Docker.app/Contents/Resources/bin:/Users/vuthuylinh/Documents/ai4life_toray/tmp/tlinh-runtime:$PATH
-export KUBECONFIG=/Users/vuthuylinh/Documents/ai4life_toray/tmp/tlinh-runtime/kubeconfig.yaml
+export KUBECONFIG=/path/to/tlinh-test-kubeconfig.yaml
 k3d cluster start tlinh-lakehouse
 kubectl -n lakehouse get jobs,pods
 ```
 
 Các số liệu ở đây là smoke test correctness; không dùng thời gian chạy sample làm benchmark.
 Chưa tuyên bố recovery khi crash đúng giữa commit hoặc khả năng chịu lỗi host.
+
+### Kiểm tra trước khi push nhánh
+
+Ngày 06/11/2026 đã chạy lại Docker build và ba integration tests, tất cả thành công.
+Build context đã được giới hạn bằng `spark/Dockerfile.dockerignore`, không thêm
+dockerignore dùng chung ở root repository.
+
+Sau khi mở lại cluster test, Kafka fixture không có PVC bị mất topic. Vì vậy lần
+smoke test mới dùng database `metastore_tlinh_publish_20261106`, warehouse
+`s3a://cleansed-zone/tlinh-publish-20261106/warehouse` và checkpoint riêng.
+Kết quả cũ không bị ghi đè. Đây là test trong môi trường tách biệt, không phải
+nghiệm thu tích hợp Kafka/NiFi hoặc benchmark của nhóm.
+
+| Job kiểm tra trước push | Kết quả |
+| --- | --- |
+| `spark-batch-4bw7m` | raw=100, accepted=100, table_rows=100 |
+| `spark-stream-sps6f` | Complete, Kafka sang Iceberg với checkpoint MinIO riêng |
+| `spark-verify-ggwrb` | daily=100, raw=100, minute=100, PASS |
 
 ## 5. Tài nguyên và phụ thuộc còn cần
 

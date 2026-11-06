@@ -1,3 +1,4 @@
+# Only this Spark Dockerfile uses the allowlist; other team builds keep their own context.
 **
 !spark/
 !spark/**
