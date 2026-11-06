@@ -1,0 +1,11 @@
+**
+!spark/
+!spark/**
+!spark-jobs/
+!spark-jobs/*.py
+!data/
+!data/sample/
+!data/sample/*.csv
+!tests/
+!tests/spark/
+!tests/spark/*.py

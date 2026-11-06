@@ -1,0 +1,12 @@
+# Optional test fallback when the pinned public MinIO image cannot be pulled.
+# Build from the same official release tag; do not replace the team's manifests.
+FROM golang:1.22.4-bookworm AS build
+RUN git clone --depth 1 --branch RELEASE.2024-06-13T22-53-53Z https://github.com/minio/minio.git /src
+WORKDIR /src
+RUN CGO_ENABLED=0 go build -p 2 -tags kqueue -trimpath -ldflags='-s -w' -o /out/minio .
+
+FROM debian:bookworm-slim
+COPY --from=build /out/minio /usr/bin/minio
+COPY --from=build /src/LICENSE /licenses/minio/LICENSE
+EXPOSE 9000 9090
+ENTRYPOINT ["minio"]

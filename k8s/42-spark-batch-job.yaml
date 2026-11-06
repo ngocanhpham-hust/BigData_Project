@@ -1,0 +1,61 @@
+# Suspended placeholder makes the team's `kubectl apply -f k8s/` safe.
+# scripts/spark-k8s.sh creates a uniquely named, unsuspended copy per run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: spark-batch-template
+  namespace: lakehouse
+  labels:
+    app: lakehouse-spark
+spec:
+  suspend: true
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: lakehouse-spark
+        role: driver
+    spec:
+      serviceAccountName: spark
+      restartPolicy: Never
+      containers:
+        - name: driver
+          image: stock-lakehouse-spark:3.5.1-iceberg1.5.2
+          imagePullPolicy: IfNotPresent
+          command: [bash, /opt/spark/work-dir/submit.sh, batch]
+          envFrom:
+            - secretRef:
+                name: minio-secret
+            - secretRef:
+                name: postgres-secret
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: RAW_PATH
+              value: s3a://raw-zone/stock_prices_daily.parquet
+            - name: MINIO_ENDPOINT
+              value: http://minio-service:9000
+            - name: ICEBERG_CATALOG_URI
+              value: jdbc:postgresql://postgres-service:5432/metastore
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1536Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: spark-config
+              mountPath: /opt/spark/conf/lakehouse
+              readOnly: true
+      volumes:
+        - name: spark-config
+          configMap:
+            name: spark-config

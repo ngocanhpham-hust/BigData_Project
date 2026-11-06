@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-config
+  namespace: lakehouse
+data:
+  spark-defaults.conf: |
+    spark.kubernetes.namespace lakehouse
+    spark.kubernetes.container.image stock-lakehouse-spark:3.5.1-iceberg1.5.2
+    spark.kubernetes.container.image.pullPolicy IfNotPresent
+    spark.kubernetes.authenticate.driver.serviceAccountName spark
+    spark.kubernetes.executor.deleteOnTermination true
+    spark.kubernetes.executor.secretKeyRef.MINIO_ROOT_USER minio-secret:MINIO_ROOT_USER
+    spark.kubernetes.executor.secretKeyRef.MINIO_ROOT_PASSWORD minio-secret:MINIO_ROOT_PASSWORD
+    spark.kubernetes.executor.secretKeyRef.POSTGRES_USER postgres-secret:POSTGRES_USER
+    spark.kubernetes.executor.secretKeyRef.POSTGRES_PASSWORD postgres-secret:POSTGRES_PASSWORD
+    spark.driver.bindAddress 0.0.0.0
+    spark.driver.port 7078
+    spark.blockManager.port 7079
+    spark.driver.memory 1g
+    spark.executor.instances 1
+    spark.executor.cores 1
+    spark.executor.memory 1g
+    spark.executor.memoryOverhead 384m
+    spark.kubernetes.executor.request.cores 500m
+    spark.kubernetes.executor.limit.cores 1
+    spark.dynamicAllocation.enabled false
+    spark.sql.shuffle.partitions 4
+    spark.sql.adaptive.enabled true
+    spark.sql.session.timeZone Asia/Ho_Chi_Minh
+    spark.sql.streaming.forceDeleteTempCheckpointLocation false
+    spark.ui.showConsoleProgress false
